@@ -1,3 +1,3 @@
 # License material
 
-This directory contains license texts copied from exact restored NuGet packages where those packages supplied a license file. A final release must add and verify all license and notice material for the actual Linux and Windows artifacts, including Inter/OFL, Avalonia, the self-contained .NET runtime, and native third-party components.
+This directory contains license and notice texts copied from exact restored NuGet packages or their identified upstream source revisions. The Windows x64 set was checked against the emitted self-contained artifact. It must be re-audited whenever dependency versions, the .NET runtime patch, publish settings, or output contents change. The Linux artifact requires a separate finalized runtime-specific audit.

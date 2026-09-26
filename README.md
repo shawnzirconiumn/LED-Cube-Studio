@@ -16,6 +16,8 @@ dotnet run --project src/LedCube.App/LedCube.App.csproj
 
 Linux audio capture requires `pactl` and `parec`, normally provided by `pulseaudio-utils` or a compatible PipeWire-Pulse installation. A self-contained Linux build can be created with `./packaging/linux/publish-linux.sh`.
 
+A self-contained Windows x64 build and distributable ZIP can be created from PowerShell with `./packaging/windows/publish-windows.ps1`. The resulting application does not require a separate .NET installation.
+
 ## License
 
 The independently authored LED Cube Studio project code and original branding are licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE). Third-party libraries, fonts, and native components retain their own licenses; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and [licenses/](licenses/).
