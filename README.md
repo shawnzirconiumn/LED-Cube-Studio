@@ -2,6 +2,10 @@
 
 LED Cube Studio is a cross-platform desktop controller and audio-reactive visualizer for compatible LED cube hardware. This repository is currently a **pre-release / first public release candidate**.
 
+![LED Cube Studio driving a physical RGB LED cube](docs/screenshots/cube-running-visualizer.jpg)
+
+*LED Cube Studio running an audio-reactive visualizer on the connected 8×8×8 RGB cube.*
+
 Current hardware support is focused on the **8×8×8 RGB LED cube**. The application provides native serial communication, audio-output capture, configurable response controls, hardware diagnostics, and a curated collection of three-dimensional visualizers on Linux and Windows.
 
 ## Features
@@ -15,7 +19,13 @@ Current hardware support is focused on the **8×8×8 RGB LED cube**. The applica
 
 ## Screenshots
 
-Screenshots have not been captured for this release candidate yet. Planned captures are documented in [docs/screenshots/README.md](docs/screenshots/README.md); no placeholder or fabricated images are embedded here.
+![LED Cube Studio main connected interface](docs/screenshots/main-connected.png)
+
+*Main interface connected to the cube, with visualizer and response controls ready.*
+
+![LED Cube Studio device and audio setup](docs/screenshots/device-audio-setup.png)
+
+*Device & Audio Setup with cube profile, serial port, and audio source controls.*
 
 ## Using a release build
 
