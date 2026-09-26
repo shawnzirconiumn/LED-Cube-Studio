@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LED Cube Studio
+Comment=Control and visualize audio on LED cube hardware
+Exec=@EXECUTABLE@
+Icon=led-cube-studio
+Categories=AudioVideo;Utility;
+Terminal=false
+StartupNotify=true

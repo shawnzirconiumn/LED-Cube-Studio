@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>led-cube-studio</AssemblyName>
+    <RootNamespace>LedCube.App</RootNamespace>
+    <Product>LED Cube Studio</Product>
+    <Title>LED Cube Studio</Title>
+    <Description>Control and visualize audio on LED cube hardware</Description>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../LedCube.Core/LedCube.Core.csproj" />
+    <ProjectReference Include="../LedCube.Hardware/LedCube.Hardware.csproj" />
+    <ProjectReference Include="../LedCube.Audio/LedCube.Audio.csproj" />
+    <PackageReference Include="Avalonia" Version="11.2.6" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.6" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.6" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="../../assets/branding/generated/led-cube-studio-256.png"
+                      Link="Assets/led-cube-studio.png" />
+  </ItemGroup>
+</Project>

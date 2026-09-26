@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../LedCube.Core/LedCube.Core.csproj" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <InternalsVisibleTo Include="LedCube.Tests" />
+  </ItemGroup>
+</Project>

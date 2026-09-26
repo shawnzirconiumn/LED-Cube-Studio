@@ -1,0 +1,168 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LedCube.App.ViewModels"
+        xmlns:presentation="using:LedCube.App.Presentation"
+        xmlns:audio="using:LedCube.Audio"
+        xmlns:hardware="using:LedCube.Hardware.Transport"
+        xmlns:visualization="using:LedCube.Core.Visualization"
+        x:Class="LedCube.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="LED Cube Studio" Icon="/Assets/led-cube-studio.png"
+        Width="820" Height="680" MinWidth="660" MinHeight="540">
+  <Window.Resources>
+    <presentation:FriendlyNameConverter x:Key="FriendlyName" />
+  </Window.Resources>
+
+  <ScrollViewer>
+    <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="7"
+                  HorizontalAlignment="Right" Margin="0,0,0,11">
+        <TextBlock Text="●" Foreground="#59C7FF" FontSize="11" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding ConnectionStateLabel}" FontWeight="SemiBold"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+
+      <Border Grid.Row="{Binding VisualizerSectionRow}" Padding="16" CornerRadius="8"
+              BorderThickness="1" BorderBrush="#405060" Margin="0,0,0,11">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Visualizer" FontWeight="SemiBold" FontSize="16" />
+          <ComboBox ItemsSource="{Binding Visualizers}" SelectedItem="{Binding SelectedVisualizer}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="visualization:IVisualizer">
+                <Grid ColumnDefinitions="90,*" ToolTip.Tip="{Binding Description}">
+                  <TextBlock Grid.Column="0" Text="{Binding Category}" Opacity="0.55" FontSize="11"
+                             VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{Binding DisplayName}" />
+                </Grid>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="90,*,52" Margin="0,3,0,0">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Sensitivity" VerticalAlignment="Center" />
+            <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="200" TickFrequency="5"
+                    Value="{Binding Sensitivity}" />
+            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding SensitivityLabel}"
+                       HorizontalAlignment="Right" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Decay" VerticalAlignment="Center" />
+            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="5"
+                    Value="{Binding Decay}" />
+            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding DecayLabel}"
+                       HorizontalAlignment="Right" VerticalAlignment="Center" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Row="2" IsVisible="{Binding IsConnected}" Padding="16" CornerRadius="8"
+              BorderThickness="1" BorderBrush="#405060" Margin="0,0,0,11">
+        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Row="0" Text="{Binding ConnectionSummary}" FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis" Margin="0,0,14,5" />
+          <TextBlock Grid.Row="1" Text="{Binding ConnectionSourceSummary}" Opacity="0.8"
+                     TextTrimming="CharacterEllipsis" Margin="0,0,14,0" />
+          <Button Grid.RowSpan="2" Grid.Column="1" Content="Disconnect"
+                  Command="{Binding ToggleConnectionCommand}" MinWidth="112"
+                  VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
+      <TextBlock Grid.Row="3" IsVisible="{Binding IsConnected}" Text="{Binding UserStatus}"
+                 TextWrapping="Wrap" Opacity="0.62" FontSize="12" Margin="4,0,4,11" />
+
+      <Expander Grid.Row="{Binding SetupSectionRow}" Header="Device &amp; Audio Setup"
+                IsExpanded="{Binding DeviceSetupExpanded, Mode=TwoWay}" Margin="0,0,0,11">
+        <Border Padding="16" Margin="0,8,0,0" CornerRadius="8"
+                BorderThickness="1" BorderBrush="#405060">
+          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="120,*">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Cube" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding Profiles}"
+                      SelectedItem="{Binding SelectedProfile}"
+                      IsEnabled="{Binding IsConnectionConfigurationEnabled}" Margin="0,3" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Connection" VerticalAlignment="Center" />
+            <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto" Margin="0,3">
+              <ComboBox Grid.Column="0" ItemsSource="{Binding SerialPorts}"
+                        SelectedItem="{Binding SelectedSerialPort}"
+                        IsEnabled="{Binding IsConnectionConfigurationEnabled}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="hardware:SerialPortDescriptor">
+                    <TextBlock Text="{Binding Converter={StaticResource FriendlyName}}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshPortsCommand}"
+                      Margin="8,0,0,0" IsEnabled="{Binding IsConnectionConfigurationEnabled}"
+                      Opacity="0.78" />
+            </Grid>
+            <TextBlock Grid.Row="2" Grid.Column="1" IsVisible="{Binding HasNoSerialPorts}"
+                       Text="No compatible serial connection found. Connect the LED cube and Refresh."
+                       TextWrapping="Wrap" Opacity="0.72" FontSize="12" Margin="0,2,0,5" />
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Audio Output" VerticalAlignment="Center" />
+            <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="*,Auto" Margin="0,3">
+              <ComboBox Grid.Column="0" ItemsSource="{Binding AudioSources}"
+                        SelectedItem="{Binding SelectedAudioSource}"
+                        IsEnabled="{Binding IsConnectionConfigurationEnabled}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="audio:AudioSourceInfo">
+                    <TextBlock Text="{Binding Converter={StaticResource FriendlyName}}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshAudioSourcesCommand}"
+                      Margin="8,0,0,0" IsEnabled="{Binding IsConnectionConfigurationEnabled}"
+                      Opacity="0.78" />
+            </Grid>
+            <TextBlock Grid.Row="4" Grid.Column="1" IsVisible="{Binding HasNoAudioSource}"
+                       Text="No compatible audio output found. Check your audio output and Refresh."
+                       TextWrapping="Wrap" Opacity="0.72" FontSize="12" Margin="0,2,0,5" />
+
+            <Expander Grid.Row="5" Grid.ColumnSpan="2" Header="Advanced" Margin="0,6,0,0">
+              <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="120,*" Margin="0,7,0,2">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Baud rate" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding BaudRates}"
+                          SelectedItem="{Binding SelectedBaudRate}"
+                          IsEnabled="{Binding IsConnectionConfigurationEnabled}" Margin="0,3" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Source mode" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding StreamModes}"
+                          SelectedItem="{Binding SelectedStreamMode}"
+                          IsEnabled="{Binding IsConnectionConfigurationEnabled}" Margin="0,3" />
+              </Grid>
+            </Expander>
+
+            <TextBlock Grid.Row="6" Grid.ColumnSpan="2" IsVisible="{Binding IsDisconnected}"
+                       Text="{Binding UserStatus}" TextWrapping="Wrap" Opacity="0.72"
+                       FontSize="12" Margin="0,9,0,3" />
+            <Button Grid.Row="7" Grid.Column="1" IsVisible="{Binding IsDisconnected}"
+                    Content="Connect" Command="{Binding ToggleConnectionCommand}"
+                    MinWidth="112" HorizontalAlignment="Right" Margin="0,6,0,0" />
+          </Grid>
+        </Border>
+      </Expander>
+
+      <Expander Grid.Row="5" Header="Diagnostics"
+                IsExpanded="{Binding DiagnosticsVisible, Mode=TwoWay}">
+        <StackPanel Spacing="8" Margin="0,8,0,1">
+          <TextBlock Text="Connection" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding ConnectionStatus}" TextWrapping="Wrap" Opacity="0.8" />
+          <TextBlock Text="{Binding AudioStatus}" TextWrapping="Wrap" Opacity="0.8" />
+          <TextBox Text="{Binding DetailStatus}" MinHeight="64" IsReadOnly="True"
+                   AcceptsReturn="True" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding EndToEndAudioAge}" FontWeight="Bold" FontSize="18"
+                     Foreground="#59C7FF" Margin="0,6,0,0" />
+          <TextBlock Text="Audio → FFT → normalized bands → VoxelScene" FontWeight="SemiBold" />
+          <TextBox Text="{Binding AudioPipelineDiagnostic}" MinHeight="175"
+                   IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   FontFamily="monospace" FontSize="12" />
+          <TextBlock Text="Frame and serial transport" FontWeight="SemiBold" Margin="0,6,0,0" />
+          <TextBox Text="{Binding DiagnosticLog}" MinHeight="220"
+                   IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   FontFamily="monospace" FontSize="12" />
+        </StackPanel>
+      </Expander>
+    </Grid>
+  </ScrollViewer>
+</Window>

@@ -1,0 +1,34 @@
+# .NET build and package output
+**/bin/
+**/obj/
+artifacts/
+publish/
+*.nupkg
+*.snupkg
+
+# IDE and editor state
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Tool-generated local state
+**/.avalonia-build-tasks/
+TestResults/
+coverage/
+
+# Temporary packaging output
+*.publish-stamp
+packaging/**/stage/
+packaging/**/output/
+
+# User-local application settings
+settings.json
+*.local.json
+
+# OS metadata
+.DS_Store
+Thumbs.db
