@@ -12,6 +12,11 @@ release artifact later.
   files. It intentionally preserves settings such as
   `~/.config/LedCubeStudio/settings.json`.
 
+The publish directory includes `LICENSE.txt`, `THIRD-PARTY-NOTICES.md`, and
+the exact shared and Linux-specific files selected from `licenses/`. Windows-only
+native notices, including ANGLE, are intentionally not copied into the Linux
+artifact.
+
 The original LED Cube Studio icon is maintained in
 `assets/branding/led-cube-studio.svg`, which is the canonical source asset.
 The installer registers that SVG as a scalable icon and installs generated PNG

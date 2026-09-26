@@ -16,7 +16,13 @@ icon_sizes=(16 32 48 64 128 256 512)
 
 newer_input=""
 if [[ -f "$publish_stamp" ]]; then
-  newer_input="$(find "$repo_root/src" "$branding_dir" \
+  newer_input="$(find \
+    "$repo_root/src" \
+    "$branding_dir" \
+    "$repo_root/licenses" \
+    "$repo_root/LICENSE" \
+    "$repo_root/THIRD-PARTY-NOTICES.md" \
+    "$script_dir/publish-linux.sh" \
     \( -path '*/bin' -o -path '*/obj' \) -prune -o \
     -type f -newer "$publish_stamp" -print -quit)"
 fi
