@@ -15,4 +15,4 @@ Outputs:
 
 The ZIP contains the application, the GPL project license, third-party notices, and verified dependency license material. Publishing can be cross-compiled with a compatible .NET 8 SDK on Linux, but launching, audio capture, serial-device access, icon display, and rendering must be smoke-tested on Windows x64 before release.
 
-The executable icon is `assets/branding/generated/led-cube-studio.ico`. It was generated from the original `assets/branding/led-cube-studio.svg` with 16, 24, 32, 48, 64, 128, and 256 pixel images; it has no relationship to any legacy icon.
+The executable icon is `assets/branding/generated/led-cube-studio.ico`. It was generated exclusively from the original `assets/branding/led-cube-studio.svg` with 16, 24, 32, 48, 64, 128, and 256 pixel images.
