@@ -48,7 +48,7 @@ The audited self-contained Windows artifact was produced by .NET SDK 8.0.130. In
 | HarfBuzzSharp native `libHarfBuzzSharp.dll` | 7.3.0.3 | Shared MIT license above; `HarfBuzzSharp.NativeAssets.Win32-7.3.0.3-THIRD-PARTY-NOTICES.txt` |
 | Avalonia ANGLE `av_libglesv2.dll` | 2.1.22045.20230930 | `Avalonia.ANGLE.Windows-2.1.22045.20230930.txt` |
 
-The Windows publishing script currently copies the complete repository `licenses/` directory, so it may contain clearly named Linux-specific texts in addition to the material required by Windows. This does not indicate that Linux native binaries are distributed in the Windows artifact.
+Windows packaging intentionally includes only shared and Windows-specific license material. Linux runtime and native notice files are not copied into the Windows artifact.
 
 ## Audit maintenance
 

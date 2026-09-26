@@ -1,0 +1,104 @@
+name: Build release artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x64:
+    name: Build Linux x64 artifact
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Linux x64
+        run: ./packaging/linux/publish-linux.sh
+
+      - name: Verify Linux license payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x artifacts/linux-x64/led-cube-studio
+          test -f artifacts/linux-x64/LICENSE.txt
+          test -f artifacts/linux-x64/THIRD-PARTY-NOTICES.md
+          test -f artifacts/linux-x64/licenses/dotnet-runtime-linux-x64-8.0.30-LICENSE.txt
+          test -f artifacts/linux-x64/licenses/SkiaSharp.NativeAssets.Linux-2.88.9-THIRD-PARTY-NOTICES.txt
+          test -f artifacts/linux-x64/licenses/HarfBuzzSharp.NativeAssets.Linux-7.3.0.3-THIRD-PARTY-NOTICES.txt
+          if find artifacts/linux-x64/licenses -maxdepth 1 -type f -printf '%f\n' | grep -Ei '(Windows|Win32|win-x64|ANGLE)' >/dev/null; then
+            echo "Windows-only license material found in Linux artifact" >&2
+            exit 1
+          fi
+
+      - name: Create Linux release archive
+        run: tar -C artifacts/linux-x64 -czf artifacts/LED-Cube-Studio-linux-x64.tar.gz .
+
+      - name: Verify Linux release archive
+        run: |
+          tar -tzf artifacts/LED-Cube-Studio-linux-x64.tar.gz >/dev/null
+          tar -tzf artifacts/LED-Cube-Studio-linux-x64.tar.gz | grep -Fx './LICENSE.txt' >/dev/null
+          tar -tzf artifacts/LED-Cube-Studio-linux-x64.tar.gz | grep -Fx './THIRD-PARTY-NOTICES.md' >/dev/null
+          tar -tzf artifacts/LED-Cube-Studio-linux-x64.tar.gz | grep -Fx './licenses/dotnet-runtime-linux-x64-8.0.30-LICENSE.txt' >/dev/null
+
+      - name: Upload Linux release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: LED-Cube-Studio-linux-x64
+          path: artifacts/LED-Cube-Studio-linux-x64.tar.gz
+          if-no-files-found: error
+
+  windows-x64:
+    name: Build Windows x64 artifact
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Windows x64
+        shell: pwsh
+        run: ./packaging/windows/publish-windows.ps1
+
+      - name: Verify Windows license payload
+        shell: pwsh
+        run: |
+          $RequiredFiles = @(
+              "artifacts/windows-x64/led-cube-studio.exe"
+              "artifacts/windows-x64/LICENSE.txt"
+              "artifacts/windows-x64/THIRD-PARTY-NOTICES.md"
+              "artifacts/windows-x64/licenses/dotnet-runtime-win-x64-8.0.30-LICENSE.txt"
+              "artifacts/windows-x64/licenses/Avalonia.ANGLE.Windows-2.1.22045.20230930.txt"
+              "artifacts/LED-Cube-Studio-win-x64.zip"
+          )
+          foreach ($RequiredFile in $RequiredFiles) {
+              if (-not (Test-Path $RequiredFile)) {
+                  throw "Required Windows artifact file is missing: $RequiredFile"
+              }
+          }
+          $UnexpectedFiles = Get-ChildItem "artifacts/windows-x64/licenses" -File |
+              Where-Object { $_.Name -match "Linux|linux-x64" }
+          if ($UnexpectedFiles) {
+              throw "Linux-only license material found in Windows artifact: $($UnexpectedFiles.Name -join ', ')"
+          }
+
+      - name: Upload Windows release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: LED-Cube-Studio-win-x64
+          path: artifacts/LED-Cube-Studio-win-x64.zip
+          if-no-files-found: error
