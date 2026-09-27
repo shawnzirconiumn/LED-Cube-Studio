@@ -8,11 +8,13 @@
         x:Class="LedCube.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="LED Cube Studio" Icon="/Assets/led-cube-studio.png"
-        Width="820" Height="680" MinWidth="660" MinHeight="540">
+        Width="980" Height="760" MinWidth="760" MinHeight="600">
   <Window.Resources>
     <presentation:FriendlyNameConverter x:Key="FriendlyName" />
   </Window.Resources>
 
+  <TabControl>
+    <TabItem Header="Studio">
   <ScrollViewer>
     <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
       <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="7"
@@ -165,4 +167,146 @@
       </Expander>
     </Grid>
   </ScrollViewer>
+    </TabItem>
+    <TabItem Header="Visualizer Builder">
+      <ScrollViewer>
+        <Grid Margin="24" RowDefinitions="Auto,Auto,*,Auto" ColumnDefinitions="280,*">
+          <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Spacing="8" Margin="0,0,0,14">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+              <StackPanel>
+                <TextBlock Text="Visualizer Builder" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="One definition, three editing views. Hidden values are preserved when modes change."
+                           Opacity="0.65" FontSize="12" />
+              </StackPanel>
+              <ComboBox Grid.Column="1" ItemsSource="{Binding Builder.Modes}"
+                        SelectedItem="{Binding Builder.SelectedMode}" MinWidth="120" />
+              <Button Grid.Column="2" Content="New" Command="{Binding Builder.NewCommand}" />
+              <Button Grid.Column="3" Content="Try It Now" Command="{Binding Builder.TryNowCommand}" />
+            </Grid>
+            <Grid ColumnDefinitions="90,*,90,*">
+              <TextBlock Text="Name" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding Builder.Name, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBlock Grid.Column="2" Text="Description" VerticalAlignment="Center" />
+              <TextBox Grid.Column="3" Text="{Binding Builder.Description, UpdateSourceTrigger=PropertyChanged}" />
+            </Grid>
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+              <TextBlock Text="Example" VerticalAlignment="Center" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding Builder.Presets}"
+                        SelectedItem="{Binding Builder.SelectedPreset}" DisplayMemberBinding="{Binding Name}" />
+              <Button Grid.Column="2" Content="Use Example" Command="{Binding Builder.UsePresetCommand}" />
+              <TextBlock Grid.Column="3" Text="Beat Pulse · Spectrum Columns · Rain" VerticalAlignment="Center" Opacity="0.55" />
+            </Grid>
+          </StackPanel>
+
+          <Border Grid.Row="2" Grid.Column="0" Padding="12" CornerRadius="8" BorderThickness="1"
+                  BorderBrush="#405060" Margin="0,0,12,0">
+            <Grid RowDefinitions="Auto,*,Auto">
+              <TextBlock Text="Layers" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
+              <ListBox Grid.Row="1" ItemsSource="{Binding Builder.Layers}"
+                       SelectedItem="{Binding Builder.SelectedLayer}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:LayerEditorViewModel">
+                    <Grid ColumnDefinitions="Auto,*" Margin="2,5">
+                      <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
+                      <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Effect}" FontSize="11" Opacity="0.6" />
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <Grid Grid.Row="2" ColumnDefinitions="*,*,*,*" Margin="0,8,0,0">
+                <Button Content="Add" Command="{Binding Builder.AddLayerCommand}" />
+                <Button Grid.Column="1" Content="Remove" Command="{Binding Builder.RemoveLayerCommand}" />
+                <Button Grid.Column="2" Content="↑" Command="{Binding Builder.MoveLayerUpCommand}" />
+                <Button Grid.Column="3" Content="↓" Command="{Binding Builder.MoveLayerDownCommand}" />
+              </Grid>
+            </Grid>
+          </Border>
+
+          <Border Grid.Row="2" Grid.Column="1" Padding="14" CornerRadius="8" BorderThickness="1" BorderBrush="#405060">
+            <StackPanel Spacing="8" IsVisible="{Binding Builder.SelectedLayer.Enabled}">
+              <TextBlock Text="Selected layer" FontWeight="SemiBold" FontSize="16" />
+              <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Text="Layer name" VerticalAlignment="Center" />
+                <TextBox Grid.Column="1" Text="{Binding Builder.SelectedLayer.Name, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Grid.Row="1" Text="Effect" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Builder.Effects}"
+                          SelectedItem="{Binding Builder.SelectedLayer.Effect}" />
+                <TextBlock Grid.Row="2" Text="Control source" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding Builder.Sources}"
+                          SelectedItem="{Binding Builder.SelectedLayer.SourceKind}" />
+                <TextBlock Grid.Row="3" Text="Primary color" VerticalAlignment="Center" />
+                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Builder.SelectedLayer.PrimaryColor, UpdateSourceTrigger=PropertyChanged}"
+                         Watermark="#00B4FF" />
+                <TextBlock Grid.Row="4" Text="Speed" VerticalAlignment="Center" />
+                <NumericUpDown Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="100" Increment="0.1"
+                               Value="{Binding Builder.SelectedLayer.Speed}" />
+                <TextBlock Grid.Row="5" Text="Brightness" VerticalAlignment="Center" />
+                <Slider Grid.Row="5" Grid.Column="1" Minimum="0" Maximum="1"
+                        Value="{Binding Builder.SelectedLayer.Brightness}" />
+              </Grid>
+
+              <StackPanel Spacing="8" IsVisible="{Binding Builder.ShowAdvancedControls}">
+                <TextBlock Text="Composition, mapping &amp; timing" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                  <TextBlock Text="Blend" VerticalAlignment="Center" />
+                  <ComboBox Grid.Column="1" ItemsSource="{Binding Builder.BlendModes}" SelectedItem="{Binding Builder.SelectedLayer.Blend}" />
+                  <TextBlock Grid.Row="1" Text="Axis" VerticalAlignment="Center" />
+                  <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Builder.Axes}" SelectedItem="{Binding Builder.SelectedLayer.Axis}" />
+                  <TextBlock Grid.Row="2" Text="Direction" VerticalAlignment="Center" />
+                  <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding Builder.Directions}" SelectedItem="{Binding Builder.SelectedLayer.Direction}" />
+                  <TextBlock Grid.Row="3" Text="FFT band" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="63" Value="{Binding Builder.SelectedLayer.Band}" />
+                  <TextBlock Grid.Row="4" Text="Constant / gain" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="1" Increment="0.05" Value="{Binding Builder.SelectedLayer.Constant}" />
+                  <TextBlock Grid.Row="5" Text="Oscillator Hz" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="5" Grid.Column="1" Minimum="0" Maximum="100" Increment="0.1" Value="{Binding Builder.SelectedLayer.Frequency}" />
+                  <TextBlock Grid.Row="6" Text="Offset / thickness" VerticalAlignment="Center" />
+                  <Grid Grid.Row="6" Grid.Column="1" ColumnDefinitions="*,*">
+                    <NumericUpDown Minimum="0" Maximum="1" Increment="0.05" Value="{Binding Builder.SelectedLayer.Offset}" />
+                    <NumericUpDown Grid.Column="1" Minimum="0.001" Maximum="1" Increment="0.05" Value="{Binding Builder.SelectedLayer.Thickness}" />
+                  </Grid>
+                  <TextBlock Grid.Row="7" Text="Density / lifetime" VerticalAlignment="Center" />
+                  <Grid Grid.Row="7" Grid.Column="1" ColumnDefinitions="*,*">
+                    <NumericUpDown Minimum="0" Maximum="1" Increment="0.05" Value="{Binding Builder.SelectedLayer.Density}" />
+                    <NumericUpDown Grid.Column="1" Minimum="0.001" Maximum="120" Increment="0.1" Value="{Binding Builder.SelectedLayer.Lifetime}" />
+                  </Grid>
+                  <TextBlock Grid.Row="8" Text="Color mapping" VerticalAlignment="Center" />
+                  <ComboBox Grid.Row="8" Grid.Column="1" ItemsSource="{Binding Builder.ColorMappings}" SelectedItem="{Binding Builder.SelectedLayer.ColorMapping}" />
+                  <TextBlock Grid.Row="9" Text="Second color" VerticalAlignment="Center" />
+                  <Grid Grid.Row="9" Grid.Column="1" ColumnDefinitions="*,Auto">
+                    <TextBox Text="{Binding Builder.SelectedLayer.SecondaryColor, UpdateSourceTrigger=PropertyChanged}" Watermark="#FF00B4" />
+                    <CheckBox Grid.Column="1" Content="Audio intensity" IsChecked="{Binding Builder.SelectedLayer.AudioDrivenIntensity}" VerticalAlignment="Center" />
+                  </Grid>
+                </Grid>
+              </StackPanel>
+              <Grid ColumnDefinitions="130,*" IsVisible="{Binding Builder.ShowExpertControls}" Margin="0,5,0,0">
+                <TextBlock Text="Phase / decay" VerticalAlignment="Center" />
+                <Grid Grid.Column="1" ColumnDefinitions="*,*">
+                  <NumericUpDown Minimum="-100" Maximum="100" Increment="0.05" Value="{Binding Builder.SelectedLayer.Phase}" />
+                  <NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" Increment="0.05" Value="{Binding Builder.SelectedLayer.Decay}" />
+                </Grid>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Grid Grid.Row="3" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,14,0,0">
+            <StackPanel>
+              <TextBlock Text="{Binding Builder.Status}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Builder.StorageLocation}" Opacity="0.5" FontSize="11" />
+            </StackPanel>
+            <ComboBox Grid.Column="1" Width="220" ItemsSource="{Binding Builder.SavedVisualizers}"
+                      SelectedItem="{Binding Builder.SelectedSavedVisualizer}" />
+            <Button Grid.Column="2" Content="Open" Command="{Binding Builder.OpenCommand}" />
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
+              <Button Content="Save" Command="{Binding Builder.SaveCommand}" />
+              <Button Content="Save As" Command="{Binding Builder.SaveAsCommand}" />
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </ScrollViewer>
+    </TabItem>
+  </TabControl>
 </Window>

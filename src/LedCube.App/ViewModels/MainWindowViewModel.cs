@@ -12,6 +12,7 @@ using LedCube.Core.Devices;
 using LedCube.Core.Diagnostics;
 using LedCube.Core.Scene;
 using LedCube.Core.Visualization;
+using LedCube.Core.Visualization.Builder;
 using LedCube.Hardware;
 using LedCube.Hardware.Encoding;
 using LedCube.Hardware.Transport;
@@ -93,7 +94,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         _device = new CubeDevice(_transport, [new Rgb8x8x8FrameEncoder()]);
         Profiles = DeviceProfiles.All;
         _selectedProfile = Profiles[0];
-        Visualizers = VisualizerRegistry.CreateAll();
+        Builder = new VisualizerBuilderViewModel();
+        Builder.PreviewRequested += BuilderOnPreviewRequested;
+        Visualizers = VisualizerRegistry.CreateAll().Concat<IVisualizer>([Builder.Runtime]).ToArray();
         _selectedVisualizer = Visualizers[0];
         StreamModes =
         [
@@ -121,6 +124,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     public ObservableCollection<SerialPortDescriptor> SerialPorts { get; } = [];
     public ObservableCollection<AudioSourceInfo> AudioSources { get; } = [];
     public IReadOnlyList<IVisualizer> Visualizers { get; }
+    public VisualizerBuilderViewModel Builder { get; }
     public IReadOnlyList<StreamModeOption> StreamModes { get; }
     public IReadOnlyList<int> BaudRates =>
         SettingsSelection.AvailableBaudRates(SelectedProfile, GeneralBaudRates);
@@ -305,9 +309,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
 
     public async Task InitializeAsync()
     {
+        await Builder.InitializeAsync().ConfigureAwait(true);
         var settings = await _settingsStore.LoadAsync().ConfigureAwait(false);
         await Dispatcher.UIThread.InvokeAsync(() => ApplySettings(settings));
         await RefreshAudioSourcesAsync(settings.SelectedAudioSourceId).ConfigureAwait(false);
+    }
+
+    private void BuilderOnPreviewRequested(CustomVisualizerRuntime runtime)
+    {
+        SelectedVisualizer = runtime;
+        DetailStatus = IsConnected
+            ? $"Live-previewing {runtime.DisplayName}; builder edits update immediately."
+            : $"{runtime.DisplayName} is ready. Connect the cube to see the live preview.";
+        UserStatus = DetailStatus;
     }
 
     private Task RefreshAudioSourcesAsync() =>
@@ -931,6 +945,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         _transport.WriteCompleted -= TransportOnWriteCompleted;
         _transport.ErrorReceived -= TransportOnErrorReceived;
         _analyzer.SnapshotAvailable -= AnalyzerOnSnapshotAvailable;
+        Builder.PreviewRequested -= BuilderOnPreviewRequested;
         await _transport.DisposeAsync().ConfigureAwait(false);
     }
 
