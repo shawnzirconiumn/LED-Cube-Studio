@@ -12,6 +12,7 @@ using LedCube.Core.Devices;
 using LedCube.Core.Diagnostics;
 using LedCube.Core.Scene;
 using LedCube.Core.Visualization;
+using LedCube.Core.Visualization.Builder;
 using LedCube.Hardware;
 using LedCube.Hardware.Encoding;
 using LedCube.Hardware.Transport;
@@ -39,6 +40,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     private SerialPortDescriptor? _selectedSerialPort;
     private AudioSourceInfo? _selectedAudioSource;
     private IVisualizer _selectedVisualizer;
+    private IVisualizer? _visualizerBeforePreview;
     private StreamModeOption _selectedStreamMode;
     private int _selectedBaudRate;
     private double _sensitivity = 100;
@@ -93,8 +95,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         _device = new CubeDevice(_transport, [new Rgb8x8x8FrameEncoder()]);
         Profiles = DeviceProfiles.All;
         _selectedProfile = Profiles[0];
-        Visualizers = VisualizerRegistry.CreateAll();
+        Builder = new VisualizerBuilderViewModel();
+        Builder.PreviewRequested += BuilderOnPreviewRequested;
+        Builder.PreviewStopped += BuilderOnPreviewStopped;
+        Visualizers = VisualizerRegistry.CreateAll().Concat<IVisualizer>([Builder.Runtime]).ToArray();
         _selectedVisualizer = Visualizers[0];
+        _visualizerBeforePreview = _selectedVisualizer;
         StreamModes =
         [
             new StreamModeOption("Audio visualizer", null),
@@ -121,6 +127,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     public ObservableCollection<SerialPortDescriptor> SerialPorts { get; } = [];
     public ObservableCollection<AudioSourceInfo> AudioSources { get; } = [];
     public IReadOnlyList<IVisualizer> Visualizers { get; }
+    public VisualizerBuilderViewModel Builder { get; }
     public IReadOnlyList<StreamModeOption> StreamModes { get; }
     public IReadOnlyList<int> BaudRates =>
         SettingsSelection.AvailableBaudRates(SelectedProfile, GeneralBaudRates);
@@ -170,6 +177,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         set
         {
             if (!Set(ref _selectedVisualizer, value)) return;
+            if (ReferenceEquals(value, Builder.Runtime)) Builder.SetPreviewActiveFromHost(true);
+            else
+            {
+                _visualizerBeforePreview = value;
+                Builder.SetPreviewActiveFromHost(false);
+            }
             if (_device.IsConnected && SelectedStreamMode.UsesAudio)
             {
                 DetailStatus = $"Streaming {value.DisplayName} to {SelectedProfile.Name}. Visualizer and response controls update live.";
@@ -305,9 +318,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
 
     public async Task InitializeAsync()
     {
+        await Builder.InitializeAsync().ConfigureAwait(true);
         var settings = await _settingsStore.LoadAsync().ConfigureAwait(false);
         await Dispatcher.UIThread.InvokeAsync(() => ApplySettings(settings));
         await RefreshAudioSourcesAsync(settings.SelectedAudioSourceId).ConfigureAwait(false);
+    }
+
+    private void BuilderOnPreviewRequested(CustomVisualizerRuntime runtime)
+    {
+        if (!ReferenceEquals(SelectedVisualizer, runtime)) _visualizerBeforePreview = SelectedVisualizer;
+        SelectedVisualizer = runtime;
+        DetailStatus = IsConnected
+            ? $"Live-previewing {runtime.DisplayName}; builder edits update immediately."
+            : $"{runtime.DisplayName} is ready. Connect the cube to see the live preview.";
+        UserStatus = DetailStatus;
+    }
+
+    private void BuilderOnPreviewStopped()
+    {
+        SelectedVisualizer = _visualizerBeforePreview
+                             ?? Visualizers.First(visualizer => !ReferenceEquals(visualizer, Builder.Runtime));
+        DetailStatus = IsConnected
+            ? $"Streaming {SelectedVisualizer.DisplayName} to {SelectedProfile.Name}."
+            : $"Preview stopped. {SelectedVisualizer.DisplayName} is selected.";
+        UserStatus = DetailStatus;
     }
 
     private Task RefreshAudioSourcesAsync() =>
@@ -931,6 +965,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         _transport.WriteCompleted -= TransportOnWriteCompleted;
         _transport.ErrorReceived -= TransportOnErrorReceived;
         _analyzer.SnapshotAvailable -= AnalyzerOnSnapshotAvailable;
+        Builder.PreviewRequested -= BuilderOnPreviewRequested;
+        Builder.PreviewStopped -= BuilderOnPreviewStopped;
         await _transport.DisposeAsync().ConfigureAwait(false);
     }
 
