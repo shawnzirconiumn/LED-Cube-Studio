@@ -106,8 +106,10 @@ public sealed class CustomVisualizerRuntime : IVisualizer
         public abstract void Render(VoxelScene scene, AudioAnalysisSnapshot audio, VisualizationFrame frame);
         protected double Source(AudioAnalysisSnapshot audio, VisualizationFrame frame) =>
             ControlSourceEvaluator.Evaluate(Definition.Source, audio, frame.Elapsed);
-        protected VoxelColor Color(double position, double source, DeviceCapabilities capabilities) =>
-            ColorMapper.Map(Definition.Color, position, source, capabilities);
+        protected VoxelColor Color(double position, double source, VisualizationFrame frame,
+            double opacity = 1, bool forceSourceIntensity = false) =>
+            ColorMapper.Map(Definition.Color, position, source, frame.Capabilities, opacity,
+                forceSourceIntensity, frame.Elapsed.TotalSeconds);
         public static CompiledLayer Create(LayerDefinition definition) => definition.Effect switch
         {
             EffectKind.FullVolume => new FullVolumeLayer(definition),
@@ -129,7 +131,8 @@ public sealed class CustomVisualizerRuntime : IVisualizer
         {
             var source = Source(audio, frame);
             for (var z = 0; z < scene.Height; z++) for (var y = 0; y < scene.Depth; y++) for (var x = 0; x < scene.Width; x++)
-                scene[x, y, z] = Color(Coordinate(x, y, z, scene, Definition.Spatial.Axis), source, frame.Capabilities);
+                scene[x, y, z] = Color(Coordinate(x, y, z, scene, Definition.Spatial.Axis), source,
+                    frame, forceSourceIntensity: true);
         }
     }
 
@@ -138,7 +141,7 @@ public sealed class CustomVisualizerRuntime : IVisualizer
         public override void Render(VoxelScene scene, AudioAnalysisSnapshot audio, VisualizationFrame frame)
         {
             var source = Source(audio, frame);
-            var position = Wrap(Definition.Spatial.Offset + Definition.Timing.Phase +
+            var position = Wrap(Definition.Spatial.Offset +
                 Definition.Spatial.Direction * Definition.Timing.Speed * frame.Elapsed.TotalSeconds);
             for (var z = 0; z < scene.Height; z++) for (var y = 0; y < scene.Depth; y++) for (var x = 0; x < scene.Width; x++)
             {
@@ -146,7 +149,7 @@ public sealed class CustomVisualizerRuntime : IVisualizer
                 var distance = Math.Abs(coordinate - position);
                 distance = Math.Min(distance, 1 - distance);
                 if (distance <= Definition.Spatial.Thickness / 2)
-                    scene[x, y, z] = Color(coordinate, source, frame.Capabilities);
+                    scene[x, y, z] = Color(coordinate, source, frame, forceSourceIntensity: true);
             }
         }
     }
@@ -165,23 +168,33 @@ public sealed class CustomVisualizerRuntime : IVisualizer
                 var level = audio.Spectrum.Count == 0 ? 0 : Math.Clamp(audio.Spectrum[band] * modulation, 0, 1);
                 var height = Coordinate(x, y, z, scene, Definition.Spatial.Axis);
                 if ((Definition.Spatial.Direction > 0 && height <= level) || (Definition.Spatial.Direction < 0 && height >= 1 - level))
-                    scene[x, y, z] = Color(height, Math.Max(level, .001), frame.Capabilities);
+                    scene[x, y, z] = Color(height, 1, frame);
             }
         }
     }
 
     private sealed class PulseLayer(LayerDefinition definition) : CompiledLayer(definition)
     {
+        private double _envelope;
+
         public override void Render(VoxelScene scene, AudioAnalysisSnapshot audio, VisualizationFrame frame)
         {
-            var source = Source(audio, frame);
+            var input = Source(audio, frame);
+            if (input >= _envelope || Definition.Timing.Decay <= 0) _envelope = input;
+            else
+            {
+                var decaySeconds = Math.Max(.01, Definition.Timing.Decay * 2);
+                _envelope = Math.Max(input, _envelope * Math.Exp(-frame.Delta.TotalSeconds / decaySeconds));
+            }
+            var source = Math.Clamp(_envelope, 0, 1);
+            if (source <= .001) return;
             var radius = source * .87;
             for (var z = 0; z < scene.Height; z++) for (var y = 0; y < scene.Depth; y++) for (var x = 0; x < scene.Width; x++)
             {
                 var dx = Unit(x, scene.Width) - .5; var dy = Unit(y, scene.Depth) - .5; var dz = Unit(z, scene.Height) - .5;
                 var distance = Math.Sqrt(dx * dx + dy * dy + dz * dz);
                 if (Math.Abs(distance - radius) <= Definition.Spatial.Thickness / 2)
-                    scene[x, y, z] = Color(Math.Clamp(distance / .87, 0, 1), source, frame.Capabilities);
+                    scene[x, y, z] = Color(Math.Clamp(distance / .87, 0, 1), 1, frame);
             }
         }
     }
@@ -191,22 +204,39 @@ public sealed class CustomVisualizerRuntime : IVisualizer
         public override void Render(VoxelScene scene, AudioAnalysisSnapshot audio, VisualizationFrame frame)
         {
             var source = Source(audio, frame);
-            var count = Math.Max(1, (int)Math.Ceiling(scene.Width * scene.Depth * Definition.Spatial.Density));
+            var crossSection = Definition.Spatial.Axis switch
+            {
+                Axis.X => scene.Depth * scene.Height,
+                Axis.Y => scene.Width * scene.Height,
+                _ => scene.Width * scene.Depth
+            };
+            var count = (int)Math.Ceiling(crossSection * Definition.Spatial.Density * source);
             var axisSize = Definition.Spatial.Axis switch { Axis.X => scene.Width, Axis.Y => scene.Depth, _ => scene.Height };
+            var trailDistance = Math.Min(1, Definition.Timing.Speed * Definition.Timing.Lifetime);
+            var trailSamples = Definition.Timing.Speed <= 0
+                ? 1
+                : Math.Max(1, (int)Math.Ceiling(trailDistance * Math.Max(1, axisSize - 1)) + 1);
             for (var index = 0; index < count; index++)
             {
                 var a = Noise(index * 3 + 11); var b = Noise(index * 3 + 29);
-                var travel = Wrap(Noise(index * 3 + 47) + Definition.Timing.Phase + Definition.Spatial.Direction * frame.Elapsed.TotalSeconds *
-                    Definition.Timing.Speed / Math.Max(.001, Definition.Timing.Lifetime));
-                var axisCoordinate = VoxelScene.ScaleCoordinate(travel, axisSize);
+                var head = Wrap(Noise(index * 3 + 47) + Definition.Timing.Phase +
+                    Definition.Spatial.Direction * frame.Elapsed.TotalSeconds * Definition.Timing.Speed);
                 var first = VoxelScene.ScaleCoordinate(a, Definition.Spatial.Axis == Axis.X ? scene.Depth : scene.Width);
                 var second = VoxelScene.ScaleCoordinate(b, Definition.Spatial.Axis == Axis.Z ? scene.Depth : scene.Height);
-                var color = Color(travel, source, frame.Capabilities);
-                switch (Definition.Spatial.Axis)
+                for (var trail = 0; trail < trailSamples; trail++)
                 {
-                    case Axis.X: scene[axisCoordinate, first, second] = color; break;
-                    case Axis.Y: scene[first, axisCoordinate, second] = color; break;
-                    default: scene[first, second, axisCoordinate] = color; break;
+                    var distance = axisSize <= 1 ? 0 : trail / (double)(axisSize - 1);
+                    if (distance > trailDistance + double.Epsilon) break;
+                    var travel = Wrap(head - Definition.Spatial.Direction * distance);
+                    var axisCoordinate = VoxelScene.ScaleCoordinate(travel, axisSize);
+                    var opacity = trailSamples <= 1 ? 1 : 1 - trail / (double)trailSamples;
+                    var color = Color(travel, 1, frame, opacity);
+                    switch (Definition.Spatial.Axis)
+                    {
+                        case Axis.X: scene[axisCoordinate, first, second] = color; break;
+                        case Axis.Y: scene[first, axisCoordinate, second] = color; break;
+                        default: scene[first, second, axisCoordinate] = color; break;
+                    }
                 }
             }
         }

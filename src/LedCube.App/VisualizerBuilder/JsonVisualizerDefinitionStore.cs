@@ -63,10 +63,37 @@ public sealed class JsonVisualizerDefinitionStore
     public async Task<string> SaveAsync(VisualizerDefinition definition, string? existingPath = null,
         CancellationToken cancellationToken = default)
     {
+        if (existingPath is null)
+            return await SaveAsAsync(definition, definition.Name, false, cancellationToken).ConfigureAwait(false);
         VisualizerDefinitionValidator.ThrowIfInvalid(definition);
         Directory.CreateDirectory(_directory);
-        var path = existingPath ?? UniquePath(definition.Name);
+        var path = existingPath;
         EnsureManagedPath(path);
+        return await WriteAsync(definition, path, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string> SaveAsAsync(VisualizerDefinition definition, string name, bool overwrite,
+        CancellationToken cancellationToken = default)
+    {
+        VisualizerDefinitionValidator.ThrowIfInvalid(definition);
+        Directory.CreateDirectory(_directory);
+        var path = PathForName(name);
+        if (File.Exists(path) && !overwrite)
+            throw new VisualizerFileExistsException(Path.GetFileName(path));
+        return await WriteAsync(definition, path, cancellationToken).ConfigureAwait(false);
+    }
+
+    public string PathForName(string name)
+    {
+        var slug = string.Concat(name.Trim().Select(character =>
+            char.IsLetterOrDigit(character) ? char.ToLowerInvariant(character) : '-')).Trim('-');
+        if (string.IsNullOrWhiteSpace(slug)) slug = "visualizer";
+        return Path.Combine(_directory, $"{slug}.json");
+    }
+
+    private static async Task<string> WriteAsync(VisualizerDefinition definition, string path,
+        CancellationToken cancellationToken)
+    {
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
@@ -81,16 +108,6 @@ public sealed class JsonVisualizerDefinitionStore
         }
     }
 
-    private string UniquePath(string name)
-    {
-        var slug = string.Concat(name.Trim().Select(character =>
-            char.IsLetterOrDigit(character) ? char.ToLowerInvariant(character) : '-')).Trim('-');
-        if (string.IsNullOrWhiteSpace(slug)) slug = "visualizer";
-        var path = Path.Combine(_directory, $"{slug}.json");
-        for (var suffix = 2; File.Exists(path); suffix++) path = Path.Combine(_directory, $"{slug}-{suffix}.json");
-        return path;
-    }
-
     private void EnsureManagedPath(string path)
     {
         var root = Path.GetFullPath(_directory) + Path.DirectorySeparatorChar;
@@ -99,4 +116,10 @@ public sealed class JsonVisualizerDefinitionStore
         if (!fullPath.StartsWith(root, comparison))
             throw new VisualizerDefinitionException("Visualizer files must be inside the application's visualizers directory.");
     }
+}
+
+public sealed class VisualizerFileExistsException(string fileName)
+    : IOException($"A visualizer named '{fileName}' already exists.")
+{
+    public string FileName { get; } = fileName;
 }

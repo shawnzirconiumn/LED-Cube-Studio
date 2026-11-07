@@ -10,6 +10,7 @@ public static class VisualizerPresets
         Layers = [new LayerDefinition { Name = "Beat shell", Effect = EffectKind.Pulse,
             Source = new ControlSourceDefinition { Kind = ControlSourceKind.BeatTrigger },
             Spatial = new SpatialDefinition { Thickness = .2 },
+            Timing = new TimingDefinition { Decay = .35 },
             Color = new ColorMappingDefinition { Kind = ColorMappingKind.Gradient,
                 Primary = new RgbColorDefinition(0, 220, 255), Secondary = new RgbColorDefinition(255, 0, 180) } }]
     };
@@ -30,7 +31,7 @@ public static class VisualizerPresets
         Layers = [new LayerDefinition { Name = "Drops", Effect = EffectKind.Rain,
             Source = new ControlSourceDefinition { Kind = ControlSourceKind.OverallLevel },
             Spatial = new SpatialDefinition { Axis = Axis.Z, Direction = -1, Density = .35 },
-            Timing = new TimingDefinition { Speed = .75, Lifetime = 1.4 },
+            Timing = new TimingDefinition { Speed = .75, Lifetime = .35 },
             Color = new ColorMappingDefinition { Kind = ColorMappingKind.Gradient,
                 Primary = new RgbColorDefinition(20, 80, 255), Secondary = new RgbColorDefinition(150, 240, 255) } }]
     };

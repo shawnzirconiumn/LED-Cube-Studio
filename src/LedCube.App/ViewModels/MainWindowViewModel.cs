@@ -40,6 +40,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     private SerialPortDescriptor? _selectedSerialPort;
     private AudioSourceInfo? _selectedAudioSource;
     private IVisualizer _selectedVisualizer;
+    private IVisualizer? _visualizerBeforePreview;
     private StreamModeOption _selectedStreamMode;
     private int _selectedBaudRate;
     private double _sensitivity = 100;
@@ -96,8 +97,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         _selectedProfile = Profiles[0];
         Builder = new VisualizerBuilderViewModel();
         Builder.PreviewRequested += BuilderOnPreviewRequested;
+        Builder.PreviewStopped += BuilderOnPreviewStopped;
         Visualizers = VisualizerRegistry.CreateAll().Concat<IVisualizer>([Builder.Runtime]).ToArray();
         _selectedVisualizer = Visualizers[0];
+        _visualizerBeforePreview = _selectedVisualizer;
         StreamModes =
         [
             new StreamModeOption("Audio visualizer", null),
@@ -174,6 +177,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         set
         {
             if (!Set(ref _selectedVisualizer, value)) return;
+            if (ReferenceEquals(value, Builder.Runtime)) Builder.SetPreviewActiveFromHost(true);
+            else
+            {
+                _visualizerBeforePreview = value;
+                Builder.SetPreviewActiveFromHost(false);
+            }
             if (_device.IsConnected && SelectedStreamMode.UsesAudio)
             {
                 DetailStatus = $"Streaming {value.DisplayName} to {SelectedProfile.Name}. Visualizer and response controls update live.";
@@ -317,10 +326,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
 
     private void BuilderOnPreviewRequested(CustomVisualizerRuntime runtime)
     {
+        if (!ReferenceEquals(SelectedVisualizer, runtime)) _visualizerBeforePreview = SelectedVisualizer;
         SelectedVisualizer = runtime;
         DetailStatus = IsConnected
             ? $"Live-previewing {runtime.DisplayName}; builder edits update immediately."
             : $"{runtime.DisplayName} is ready. Connect the cube to see the live preview.";
+        UserStatus = DetailStatus;
+    }
+
+    private void BuilderOnPreviewStopped()
+    {
+        SelectedVisualizer = _visualizerBeforePreview
+                             ?? Visualizers.First(visualizer => !ReferenceEquals(visualizer, Builder.Runtime));
+        DetailStatus = IsConnected
+            ? $"Streaming {SelectedVisualizer.DisplayName} to {SelectedProfile.Name}."
+            : $"Preview stopped. {SelectedVisualizer.DisplayName} is selected.";
         UserStatus = DetailStatus;
     }
 
@@ -946,6 +966,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         _transport.ErrorReceived -= TransportOnErrorReceived;
         _analyzer.SnapshotAvailable -= AnalyzerOnSnapshotAvailable;
         Builder.PreviewRequested -= BuilderOnPreviewRequested;
+        Builder.PreviewStopped -= BuilderOnPreviewStopped;
         await _transport.DisposeAsync().ConfigureAwait(false);
     }
 

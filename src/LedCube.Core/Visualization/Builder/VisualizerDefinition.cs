@@ -4,7 +4,7 @@ namespace LedCube.Core.Visualization.Builder;
 
 public sealed class VisualizerDefinition
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -32,6 +32,7 @@ public sealed class ControlSourceDefinition
     public int Band { get; set; }
     public double Frequency { get; set; } = 1;
     public double Phase { get; set; }
+    public double ReactionStrength { get; set; } = 1;
 }
 
 public sealed class SpatialDefinition
@@ -50,6 +51,8 @@ public sealed class ColorMappingDefinition
     public ColorMappingKind Kind { get; set; } = ColorMappingKind.Fixed;
     public bool AudioDrivenIntensity { get; set; } = true;
     public double Brightness { get; set; } = 1;
+    public double CycleOffset { get; set; }
+    public double CycleSpeed { get; set; }
 }
 
 public sealed class TimingDefinition
@@ -76,7 +79,7 @@ public enum EffectKind { FullVolume, Plane, SpectrumColumns, Pulse, Rain }
 public enum ControlSourceKind { Constant, OverallLevel, AudioBand, BeatTrigger, Oscillator }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ColorMappingKind { Fixed, Gradient }
+public enum ColorMappingKind { Fixed, Gradient, Rainbow }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum BlendMode { Overwrite, Max, Additive }

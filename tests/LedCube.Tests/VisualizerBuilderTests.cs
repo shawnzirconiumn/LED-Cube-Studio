@@ -37,6 +37,38 @@ public sealed class VisualizerBuilderTests
     }
 
     [Fact]
+    public void VersionOneDefinitionsMigrateWithoutLosingFixedOrGradientColors()
+    {
+        const string json = """
+        {
+          "schemaVersion": 1,
+          "id": "legacy",
+          "name": "Legacy Gradient",
+          "layers": [{
+            "name": "Legacy Layer",
+            "effect": "fullVolume",
+            "source": { "kind": "overallLevel" },
+            "spatial": {},
+            "color": {
+              "kind": "gradient",
+              "primary": { "red": 1, "green": 2, "blue": 3 },
+              "secondary": { "red": 4, "green": 5, "blue": 6 }
+            },
+            "timing": {}
+          }]
+        }
+        """;
+
+        var migrated = VisualizerDefinitionSerializer.Deserialize(json);
+
+        Assert.Equal(VisualizerDefinition.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(ColorMappingKind.Gradient, migrated.Layers[0].Color.Kind);
+        Assert.Equal(new RgbColorDefinition(1, 2, 3), migrated.Layers[0].Color.Primary);
+        Assert.Equal(new RgbColorDefinition(4, 5, 6), migrated.Layers[0].Color.Secondary);
+        Assert.Equal(1, migrated.Layers[0].Source.ReactionStrength);
+    }
+
+    [Fact]
     public void ValidationReportsMalformedLayerParameters()
     {
         var definition = VisualizerPresets.CreateRain();
@@ -87,13 +119,14 @@ public sealed class VisualizerBuilderTests
     {
         var audio = Snapshot(level: .4, bands: [.1, .7], beat: false, beatEnvelope: .8);
 
-        Assert.Equal(.25, ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
+        Assert.Equal(1, ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
             { Kind = ControlSourceKind.Constant, Constant = .25 }, audio, TimeSpan.Zero), 6);
-        Assert.Equal(.4, ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
+        Assert.Equal(Math.Pow(.4, .65), ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
             { Kind = ControlSourceKind.OverallLevel }, audio, TimeSpan.Zero), 6);
-        Assert.Equal(.7, ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
+        Assert.Equal(Math.Pow(.7, .65), ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
             { Kind = ControlSourceKind.AudioBand, Band = 1 }, audio, TimeSpan.Zero), 6);
-        Assert.Equal(.8, ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
+        var shapedBeat = Math.Pow(.8, .65);
+        Assert.Equal(shapedBeat / (1 + shapedBeat), ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
             { Kind = ControlSourceKind.BeatTrigger }, audio, TimeSpan.Zero), 6);
         Assert.Equal(1, ControlSourceEvaluator.Evaluate(new ControlSourceDefinition
             { Kind = ControlSourceKind.Oscillator, Frequency = 1, Phase = .25 }, audio, TimeSpan.Zero), 6);

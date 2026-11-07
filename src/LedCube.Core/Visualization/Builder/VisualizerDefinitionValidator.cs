@@ -1,3 +1,5 @@
+using LedCube.Core.Audio;
+
 namespace LedCube.Core.Visualization.Builder;
 
 public sealed record DefinitionValidationResult(IReadOnlyList<string> Errors)
@@ -38,14 +40,18 @@ public static class VisualizerDefinitionValidator
             errors.Add($"{prefix} has an incomplete source, spatial, color, or timing section.");
             return;
         }
-        if (layer.Source.Band is < 0 or > 63) errors.Add($"{prefix} band must be between 0 and 63.");
+        if (layer.Source.Band is < 0 or >= SpectrumAnalyzer.BandCount)
+            errors.Add($"{prefix} band must be between 0 and {SpectrumAnalyzer.BandCount - 1}.");
         if (!InRange(layer.Source.Constant, 0, 1)) errors.Add($"{prefix} constant must be between 0 and 1.");
+        if (!InRange(layer.Source.ReactionStrength, .25, 3)) errors.Add($"{prefix} reaction strength must be between 0.25 and 3.");
         if (!InRange(layer.Source.Frequency, 0, 100)) errors.Add($"{prefix} oscillator frequency must be between 0 and 100.");
         if (layer.Spatial.Direction is not (-1 or 1)) errors.Add($"{prefix} direction must be -1 or 1.");
         if (!InRange(layer.Spatial.Offset, 0, 1)) errors.Add($"{prefix} offset must be between 0 and 1.");
         if (!InRange(layer.Spatial.Thickness, .001, 1)) errors.Add($"{prefix} thickness must be greater than 0 and at most 1.");
         if (!InRange(layer.Spatial.Density, 0, 1)) errors.Add($"{prefix} density must be between 0 and 1.");
         if (!InRange(layer.Color.Brightness, 0, 1)) errors.Add($"{prefix} brightness must be between 0 and 1.");
+        if (!InRange(layer.Color.CycleOffset, 0, 1)) errors.Add($"{prefix} color cycle offset must be between 0 and 1.");
+        if (!InRange(layer.Color.CycleSpeed, -5, 5)) errors.Add($"{prefix} color cycle speed must be between -5 and 5.");
         if (!InRange(layer.Timing.Speed, 0, 100)) errors.Add($"{prefix} speed must be between 0 and 100.");
         if (!InRange(layer.Timing.Decay, 0, 1)) errors.Add($"{prefix} decay must be between 0 and 1.");
         if (!InRange(layer.Timing.Lifetime, .001, 120)) errors.Add($"{prefix} lifetime must be greater than 0 and at most 120 seconds.");
