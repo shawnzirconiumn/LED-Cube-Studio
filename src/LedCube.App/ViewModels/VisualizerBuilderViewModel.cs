@@ -26,15 +26,19 @@ public sealed class VisualizerBuilderViewModel : INotifyPropertyChanged
     private VisualizerDefinition? _pendingPreset;
     private BuilderMode _selectedMode;
     private EffectKind _effectToAdd = EffectKind.FullVolume;
-    private string _status = "Choose an example or add a layer to get started.";
+    private string _status = "Select Try It Now to preview the starter layer.";
     private string _validationMessage = string.Empty;
-    private bool _isPreviewActive;
     private bool _isDirty;
     private PendingDocumentAction _pendingAction;
 
     public VisualizerBuilderViewModel(JsonVisualizerDefinitionStore? store = null)
     {
         _store = store ?? new JsonVisualizerDefinitionStore();
+        var starter = CreateLayer(EffectKind.FullVolume, 1);
+        starter.Color.Brightness = .5;
+        var editor = new LayerEditorViewModel(starter, DefinitionChanged);
+        Layers.Add(editor);
+        SelectedLayer = editor;
         Runtime = new CustomVisualizerRuntime(BuildDefinition());
         Presets = VisualizerPresets.CreateAll();
         SelectedPreset = Presets[0];
@@ -45,7 +49,7 @@ public sealed class VisualizerBuilderViewModel : INotifyPropertyChanged
         MoveLayerDownCommand = new RelayCommand(() => MoveLayer(1));
         UsePresetCommand = new RelayCommand(RequestUsePreset);
         TryNowCommand = new RelayCommand(StartPreview);
-        StopPreviewCommand = new RelayCommand(StopPreview);
+        StopPreviewCommand = new RelayCommand(() => PreviewStopped?.Invoke());
         SaveCommand = new AsyncCommand(SaveCurrentAsync);
         SaveAsCommand = new AsyncCommand(RequestSaveAsAsync);
         OpenCommand = new AsyncCommand(RequestOpenAsync);
@@ -100,8 +104,6 @@ public sealed class VisualizerBuilderViewModel : INotifyPropertyChanged
     public string ValidationMessage { get => _validationMessage; private set { if (Set(ref _validationMessage, value)) OnPropertyChanged(nameof(HasValidationMessage)); } }
     public bool HasValidationMessage => !string.IsNullOrWhiteSpace(ValidationMessage);
     public bool IsDirty { get => _isDirty; private set { if (Set(ref _isDirty, value)) OnPropertyChanged(nameof(DocumentTitle)); } }
-    public bool IsPreviewActive { get => _isPreviewActive; private set { if (Set(ref _isPreviewActive, value)) OnPropertyChanged(nameof(PreviewStateText)); } }
-    public string PreviewStateText => IsPreviewActive ? "● LIVE ON CUBE" : "○ NOT LIVE";
     public bool HasPendingDiscard => _pendingAction != PendingDocumentAction.None;
     public string DiscardPrompt => "You have unsaved changes. Discard them and continue?";
     public LayerEditorViewModel? SelectedLayer { get => _selectedLayer; set => Set(ref _selectedLayer, value); }
@@ -135,18 +137,7 @@ public sealed class VisualizerBuilderViewModel : INotifyPropertyChanged
     public bool ShowExpertControls => SelectedMode == BuilderMode.Expert;
     public string StorageLocation => _store.DirectoryPath;
 
-    public async Task InitializeAsync()
-    {
-        await RefreshSavedAsync().ConfigureAwait(false);
-        if (Layers.Count == 0) UsePresetCore(SelectedPreset ?? Presets[0]);
-    }
-
-    public void SetPreviewActiveFromHost(bool active)
-    {
-        IsPreviewActive = active;
-        if (!active && Status.StartsWith("Live preview", StringComparison.Ordinal))
-            Status = "Preview stopped. The normal visualizer is active.";
-    }
+    public Task InitializeAsync() => RefreshSavedAsync();
 
     public VisualizerDefinition GetDefinitionSnapshot() => BuildDefinition();
 
@@ -277,17 +268,7 @@ public sealed class VisualizerBuilderViewModel : INotifyPropertyChanged
     private void StartPreview()
     {
         if (!UpdateRuntime()) return;
-        IsPreviewActive = true;
         PreviewRequested?.Invoke(Runtime);
-        Status = "Live preview active. Further edits update the cube automatically.";
-    }
-
-    private void StopPreview()
-    {
-        if (!IsPreviewActive) return;
-        IsPreviewActive = false;
-        PreviewStopped?.Invoke();
-        Status = "Preview stopped. The previous visualizer is active.";
     }
 
     private async Task RequestSaveAsAsync()
@@ -389,7 +370,6 @@ public sealed class VisualizerBuilderViewModel : INotifyPropertyChanged
     {
         IsDirty = true;
         UpdateRuntime();
-        if (IsPreviewActive && !HasValidationMessage) Status = "Live preview updated.";
     }
 
     private bool UpdateRuntime()
@@ -531,13 +511,34 @@ public sealed class LayerEditorViewModel : INotifyPropertyChanged
     };
     public string SpeedLabel => Effect == EffectKind.Rain ? "Fall Speed" : "Travel Speed";
     public string SpeedHelp => "Cube lengths traveled per second.";
-    public string ReactToHelp => SourceKind switch
+    public string ReactToHelp
     {
-        ControlSourceKind.OverallLevel => "Follows the current music loudness and energy.",
-        ControlSourceKind.AudioBand => "Follows one selected frequency range from the music.",
-        ControlSourceKind.BeatTrigger => "Responds to detected beats and their fading envelope.",
-        ControlSourceKind.Oscillator => "Repeats automatically at the selected rate, even in silence.",
-        _ => "Keeps the layer at a steady input level."
+        get
+        {
+            var effectHelp = Effect switch
+            {
+                EffectKind.SpectrumColumns => "The eight frequency bands drive column heights. The selected input scales those heights together.",
+                EffectKind.Pulse => "The selected input controls pulse size.",
+                EffectKind.Rain => "The selected input controls how many drops appear.",
+                _ => "The selected input controls brightness."
+            };
+            var sourceHelp = SourceKind switch
+            {
+                ControlSourceKind.OverallLevel => "Music Loudness follows the overall audio level.",
+                ControlSourceKind.AudioBand => "Frequency Band follows the selected frequency range.",
+                ControlSourceKind.BeatTrigger => "Beat follows detected beats and their fade.",
+                ControlSourceKind.Oscillator => "Automatic Pulse cycles at the selected rate, even in silence.",
+                _ => "Constant supplies a steady, full-strength input."
+            };
+            return $"{effectHelp} {sourceHelp}";
+        }
+    }
+    public string ReactionStrengthHelp => Effect switch
+    {
+        EffectKind.SpectrumColumns => "Adjusts how strongly the selected input scales all column heights.",
+        EffectKind.Pulse => "Adjusts how large the pulse grows in response to the selected input.",
+        EffectKind.Rain => "Adjusts how many drops the selected input spawns.",
+        _ => "Adjusts how strongly the selected input changes brightness."
     };
     public string BlendHelp => Blend switch
     {
@@ -665,7 +666,7 @@ public sealed class LayerEditorViewModel : INotifyPropertyChanged
         foreach (var property in new[]
         {
             nameof(EffectChoice), nameof(SourceChoice), nameof(ColorMappingChoice), nameof(Summary), nameof(EffectHelp), nameof(ReactToLabel),
-            nameof(ReactToHelp), nameof(AxisLabel), nameof(SpeedLabel), nameof(SpeedHelp),
+            nameof(ReactToHelp), nameof(ReactionStrengthHelp), nameof(AxisLabel), nameof(SpeedLabel), nameof(SpeedHelp),
             nameof(ShowAudioBand), nameof(ShowOscillatorFrequency), nameof(ShowConstant), nameof(ShowReactionStrength), nameof(ShowSpeed),
             nameof(ShowDirection), nameof(ShowAxis), nameof(ShowOffset), nameof(ShowThickness), nameof(ShowDensity), nameof(ShowDecay),
             nameof(ShowLifetime), nameof(ShowPrimaryColor), nameof(ShowSecondaryColor), nameof(ShowRainbowControls), nameof(ShowAudioIntensity), nameof(ShowSourcePhase),

@@ -29,7 +29,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     private readonly SpectrumAnalyzer _analyzer = new();
     private readonly IAudioCaptureFactory _audioFactory;
     private readonly IApplicationSettingsStore _settingsStore;
-    private readonly SerialPortTransport _transport = new();
+    private readonly ISerialTransport _transport;
     private readonly CubeDevice _device;
     private readonly Queue<string> _diagnosticLogLines = new();
     private readonly Stopwatch _rateClock = new();
@@ -40,7 +40,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     private SerialPortDescriptor? _selectedSerialPort;
     private AudioSourceInfo? _selectedAudioSource;
     private IVisualizer _selectedVisualizer;
-    private IVisualizer? _visualizerBeforePreview;
+    private IVisualizer _visualizerBeforePreview;
     private StreamModeOption _selectedStreamMode;
     private int _selectedBaudRate;
     private double _sensitivity = 100;
@@ -55,8 +55,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     private bool _diagnosticsVisible;
     private bool _deviceSetupExpanded = true;
     private IAudioCapture? _capture;
-    private CancellationTokenSource? _renderCancellation;
-    private Task? _renderTask;
+    private RenderSession? _renderSession;
     private long _encodedFramesInWindow;
     private long _sentFramesInWindow;
     private long _bytesWrittenInWindow;
@@ -89,9 +88,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     }
 
     public MainWindowViewModel(IApplicationSettingsStore settingsStore)
+        : this(settingsStore, new SerialPortTransport(), PlatformAudioCaptureFactory.Create())
+    {
+    }
+
+    internal MainWindowViewModel(IApplicationSettingsStore settingsStore, ISerialTransport transport,
+        IAudioCaptureFactory audioFactory)
     {
         _settingsStore = settingsStore;
-        _audioFactory = PlatformAudioCaptureFactory.Create();
+        _transport = transport;
+        _audioFactory = audioFactory;
         _device = new CubeDevice(_transport, [new Rgb8x8x8FrameEncoder()]);
         Profiles = DeviceProfiles.All;
         _selectedProfile = Profiles[0];
@@ -116,8 +122,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         RefreshAudioSourcesCommand = new AsyncCommand(RefreshAudioSourcesAsync);
         _device.FrameEncoded += DeviceOnFrameEncoded;
         _device.FrameSent += DeviceOnFrameSent;
-        _transport.WriteCompleted += TransportOnWriteCompleted;
-        _transport.ErrorReceived += TransportOnErrorReceived;
+        if (_transport is SerialPortTransport serialTransport)
+        {
+            serialTransport.WriteCompleted += TransportOnWriteCompleted;
+            serialTransport.ErrorReceived += TransportOnErrorReceived;
+        }
         _analyzer.SnapshotAvailable += AnalyzerOnSnapshotAvailable;
     }
 
@@ -177,13 +186,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         set
         {
             if (!Set(ref _selectedVisualizer, value)) return;
-            if (ReferenceEquals(value, Builder.Runtime)) Builder.SetPreviewActiveFromHost(true);
-            else
-            {
-                _visualizerBeforePreview = value;
-                Builder.SetPreviewActiveFromHost(false);
-            }
-            if (_device.IsConnected && SelectedStreamMode.UsesAudio)
+            if (!IsBuilderPreviewSelected) _visualizerBeforePreview = value;
+            OnPropertyChanged(nameof(IsBuilderPreviewSelected));
+            OnPropertyChanged(nameof(BuilderPreviewStatus));
+            if (ActiveStreamMode?.UsesAudio == true)
             {
                 DetailStatus = $"Streaming {value.DisplayName} to {SelectedProfile.Name}. Visualizer and response controls update live.";
                 UserStatus = $"Streaming {value.DisplayName} to {SelectedProfile.Name}";
@@ -241,6 +247,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
     public bool IsConnectionConfigurationEnabled => !_device.IsConnected;
     public bool IsConnected => _device.IsConnected;
     public bool IsDisconnected => !_device.IsConnected;
+    public bool IsBuilderPreviewSelected => ReferenceEquals(SelectedVisualizer, Builder.Runtime);
+    public string BuilderPreviewStatus
+    {
+        get
+        {
+            if (!IsBuilderPreviewSelected) return "Not Previewing";
+            if (!IsConnected) return "Preview Ready — Cube Disconnected";
+            return ActiveStreamMode?.UsesAudio switch
+            {
+                true => "Live on Cube",
+                false => "Preview Paused — Hardware Test",
+                null => "Preview Ready — Stream Inactive"
+            };
+        }
+    }
+
+    private StreamModeOption? ActiveStreamMode =>
+        IsConnected && _renderSession is { Completion.IsCompleted: false } session ? session.Mode : null;
+
     public int SetupSectionRow => IsConnected ? 4 : 1;
     public int VisualizerSectionRow => IsConnected ? 1 : 2;
     public bool HasNoSerialPorts => SerialPorts.Count == 0;
@@ -324,24 +349,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         await RefreshAudioSourcesAsync(settings.SelectedAudioSourceId).ConfigureAwait(false);
     }
 
-    private void BuilderOnPreviewRequested(CustomVisualizerRuntime runtime)
-    {
-        if (!ReferenceEquals(SelectedVisualizer, runtime)) _visualizerBeforePreview = SelectedVisualizer;
-        SelectedVisualizer = runtime;
-        DetailStatus = IsConnected
-            ? $"Live-previewing {runtime.DisplayName}; builder edits update immediately."
-            : $"{runtime.DisplayName} is ready. Connect the cube to see the live preview.";
-        UserStatus = DetailStatus;
-    }
+    private void BuilderOnPreviewRequested(CustomVisualizerRuntime runtime) => SelectedVisualizer = runtime;
 
     private void BuilderOnPreviewStopped()
     {
-        SelectedVisualizer = _visualizerBeforePreview
-                             ?? Visualizers.First(visualizer => !ReferenceEquals(visualizer, Builder.Runtime));
-        DetailStatus = IsConnected
-            ? $"Streaming {SelectedVisualizer.DisplayName} to {SelectedProfile.Name}."
-            : $"Preview stopped. {SelectedVisualizer.DisplayName} is selected.";
-        UserStatus = DetailStatus;
+        if (IsBuilderPreviewSelected) SelectedVisualizer = _visualizerBeforePreview;
     }
 
     private Task RefreshAudioSourcesAsync() =>
@@ -412,7 +424,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
             DetailStatus = $"{SelectedProfile.ProtocolStatus}{Environment.NewLine}No serial cube was detected. Check USB and permissions.";
     }
 
-    private async Task ToggleConnectionAsync()
+    internal async Task ToggleConnectionAsync()
     {
         if (_device.IsConnected)
         {
@@ -460,8 +472,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
             {
                 AudioStatus = "Audio capture and FFT are bypassed by hardware test mode.";
             }
-            _renderCancellation = new CancellationTokenSource();
-            _renderTask = RenderLoopAsync(streamMode, _renderCancellation.Token);
+            var cancellation = new CancellationTokenSource();
+            var session = new RenderSession(streamMode, cancellation, RenderLoopAsync(streamMode, cancellation.Token));
+            _renderSession = session;
+            _ = NotifyWhenStreamEndsAsync(session);
             ConnectionStatus = $"Connected to {SelectedSerialPort.DisplayName} at {SelectedBaudRate} 8N1";
             DetailStatus = streamMode.UsesAudio
                 ? $"Streaming {SelectedVisualizer.DisplayName} to {SelectedProfile.Name}. Visualizer and response controls update live."
@@ -535,15 +549,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         StreamModeOption streamMode,
         CancellationToken cancellationToken)
     {
-        var profile = SelectedProfile;
-        var frameInterval = profile.FrameSchedulerInterval ?? TimeSpan.FromMilliseconds(50);
-        var scene = new VoxelScene(profile.Width, profile.Depth, profile.Height);
-        if (streamMode.StaticColor is { } staticColor) scene.Clear(staticColor);
-        var clock = Stopwatch.StartNew();
-        var previous = clock.Elapsed;
-        long frame = 0;
         try
         {
+            var profile = SelectedProfile;
+            var frameInterval = profile.FrameSchedulerInterval ?? TimeSpan.FromMilliseconds(50);
+            var scene = new VoxelScene(profile.Width, profile.Depth, profile.Height);
+            if (streamMode.StaticColor is { } staticColor) scene.Clear(staticColor);
+            var clock = Stopwatch.StartNew();
+            var previous = clock.Elapsed;
+            long frame = 0;
             using var timer = new PeriodicTimer(frameInterval);
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -602,14 +616,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
 
     private async Task DisconnectAsync()
     {
-        var cancellation = Interlocked.Exchange(ref _renderCancellation, null);
-        cancellation?.Cancel();
-        var renderTask = Interlocked.Exchange(ref _renderTask, null);
-        if (renderTask is not null)
+        var session = Interlocked.Exchange(ref _renderSession, null);
+        if (session is not null)
         {
-            try { await renderTask.ConfigureAwait(true); } catch (OperationCanceledException) { }
+            session.Cancellation.Cancel();
+            OnPropertyChanged(nameof(BuilderPreviewStatus));
+            try { await session.Completion.ConfigureAwait(true); } catch (OperationCanceledException) { }
+            session.Cancellation.Dispose();
         }
-        cancellation?.Dispose();
         LogRatesIfDue(force: true);
 
         var capture = Interlocked.Exchange(ref _capture, null);
@@ -635,6 +649,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         OnPropertyChanged(nameof(IsDisconnected));
         OnPropertyChanged(nameof(SetupSectionRow));
         OnPropertyChanged(nameof(VisualizerSectionRow));
+        OnPropertyChanged(nameof(BuilderPreviewStatus));
+    }
+
+    private async Task NotifyWhenStreamEndsAsync(RenderSession session)
+    {
+        await session.Completion.ConfigureAwait(true);
+        if (ReferenceEquals(_renderSession, session)) OnPropertyChanged(nameof(BuilderPreviewStatus));
     }
 
     private void DeviceOnFrameEncoded(object? sender, FrameEncodedEventArgs args)
@@ -962,13 +983,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IAsyncDisposab
         await DisconnectAsync().ConfigureAwait(false);
         _device.FrameEncoded -= DeviceOnFrameEncoded;
         _device.FrameSent -= DeviceOnFrameSent;
-        _transport.WriteCompleted -= TransportOnWriteCompleted;
-        _transport.ErrorReceived -= TransportOnErrorReceived;
+        if (_transport is SerialPortTransport serialTransport)
+        {
+            serialTransport.WriteCompleted -= TransportOnWriteCompleted;
+            serialTransport.ErrorReceived -= TransportOnErrorReceived;
+        }
         _analyzer.SnapshotAvailable -= AnalyzerOnSnapshotAvailable;
         Builder.PreviewRequested -= BuilderOnPreviewRequested;
         Builder.PreviewStopped -= BuilderOnPreviewStopped;
         await _transport.DisposeAsync().ConfigureAwait(false);
     }
+
+    private sealed record RenderSession(StreamModeOption Mode, CancellationTokenSource Cancellation, Task Completion);
 
     private async Task SaveSettingsAsync()
     {

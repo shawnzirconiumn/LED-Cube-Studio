@@ -1,16 +1,83 @@
 using LedCube.App.Settings;
 using LedCube.App.ViewModels;
 using LedCube.App.VisualizerBuilder;
+using LedCube.Audio;
 using LedCube.Core.Audio;
 using LedCube.Core.Devices;
 using LedCube.Core.Scene;
 using LedCube.Core.Visualization;
 using LedCube.Core.Visualization.Builder;
+using LedCube.Hardware.Transport;
 
 namespace LedCube.Tests;
 
 public sealed class VisualizerBuilderViewModelTests
 {
+    [Fact]
+    public async Task StartupCreatesACleanVolumeThatRendersInSilence()
+    {
+        var viewModel = new VisualizerBuilderViewModel(CreateStartupStore());
+        await viewModel.InitializeAsync();
+
+        var layer = Assert.Single(viewModel.Layers);
+        Assert.Same(layer, viewModel.SelectedLayer);
+        Assert.Equal(EffectKind.FullVolume, layer.Effect);
+        Assert.Equal(ControlSourceKind.Constant, layer.SourceKind);
+        Assert.Equal(ColorMappingKind.Fixed, layer.ColorMapping);
+        Assert.False(viewModel.IsDirty);
+        Assert.Equal(viewModel.Name, viewModel.DocumentTitle);
+
+        var scene = new VoxelScene(8, 8, 8);
+        viewModel.Runtime.Render(scene, AudioAnalysisSnapshot.Silence, Frame());
+        Assert.Equal(512, scene.CountLitVoxels());
+        Assert.Equal(VoxelColor.FromRgb(0, 90, 128), scene[0, 0, 0]);
+    }
+
+    [Fact]
+    public async Task FirstStartupEditMarksTheDocumentDirtyAndRequiresDiscardConfirmation()
+    {
+        var viewModel = new VisualizerBuilderViewModel(CreateStartupStore());
+        await viewModel.InitializeAsync();
+
+        viewModel.SelectedLayer!.IntensityPercent = 25;
+
+        Assert.True(viewModel.IsDirty);
+        Assert.EndsWith(" *", viewModel.DocumentTitle, StringComparison.Ordinal);
+        viewModel.UsePresetCommand.Execute(null);
+        Assert.True(viewModel.HasPendingDiscard);
+        Assert.Equal(25, viewModel.SelectedLayer.IntensityPercent);
+    }
+
+    [Fact]
+    public async Task AnExampleLoadsFromTheUntouchedStarterAndLeavesSavedVisualizersIntact()
+    {
+        var store = CreateStartupStore();
+        try
+        {
+            var savedPath = await store.SaveAsAsync(VisualizerPresets.CreateRain(), "Saved Rain", overwrite: false);
+            var savedJson = await File.ReadAllTextAsync(savedPath);
+            var viewModel = new VisualizerBuilderViewModel(store);
+            await viewModel.InitializeAsync();
+            Assert.Equal(savedPath, Assert.Single(viewModel.SavedVisualizers).Path);
+            Assert.Equal(EffectKind.FullVolume, viewModel.SelectedLayer!.Effect);
+
+            var example = viewModel.Presets[1];
+            viewModel.SelectedPreset = example;
+            viewModel.UsePresetCommand.Execute(null);
+
+            Assert.False(viewModel.HasPendingDiscard);
+            Assert.Equal(example.Name, viewModel.Name);
+            Assert.Equal(EffectKind.SpectrumColumns, viewModel.SelectedLayer!.Effect);
+            Assert.True(viewModel.IsDirty);
+            Assert.Equal(savedJson, await File.ReadAllTextAsync(savedPath));
+            Assert.Single(Directory.EnumerateFiles(store.DirectoryPath));
+        }
+        finally
+        {
+            if (Directory.Exists(store.DirectoryPath)) Directory.Delete(store.DirectoryPath, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task NewAndEditingAreDirtyAndSuccessfulSaveClearsDirtyState()
     {
@@ -96,6 +163,30 @@ public sealed class VisualizerBuilderViewModelTests
         Assert.True(layer.ShowThickness);
         Assert.False(layer.ShowLifetime);
         Assert.False(layer.ShowMotionPhase);
+    }
+
+    [Theory]
+    [InlineData(EffectKind.FullVolume, "brightness", "brightness")]
+    [InlineData(EffectKind.Plane, "brightness", "brightness")]
+    [InlineData(EffectKind.SpectrumColumns, "eight frequency bands drive column heights", "column heights")]
+    [InlineData(EffectKind.Pulse, "pulse size", "how large the pulse grows")]
+    [InlineData(EffectKind.Rain, "how many drops appear", "how many drops")]
+    public void ReactToAndReactionStrengthHelpFollowTheSelectedEffect(
+        EffectKind effect, string reactToExplanation, string strengthExplanation)
+    {
+        var layer = NewBuilder().SelectedLayer!;
+        layer.Effect = effect == EffectKind.Rain ? EffectKind.FullVolume : EffectKind.Rain;
+        layer.SourceKind = ControlSourceKind.OverallLevel;
+        var changedProperties = new List<string?>();
+        layer.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+        layer.Effect = effect;
+
+        Assert.Contains(nameof(LayerEditorViewModel.ReactToHelp), changedProperties);
+        Assert.Contains(nameof(LayerEditorViewModel.ReactionStrengthHelp), changedProperties);
+        Assert.Contains(reactToExplanation, layer.ReactToHelp, StringComparison.Ordinal);
+        Assert.Contains(strengthExplanation, layer.ReactionStrengthHelp, StringComparison.Ordinal);
+        Assert.Contains("Music Loudness follows the overall audio level.", layer.ReactToHelp, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -196,13 +287,16 @@ public sealed class VisualizerBuilderViewModelTests
     }
 
     [Fact]
-    public void OnePreviewStartMakesSubsequentEditsLive()
+    public void OnePreviewRequestKeepsTheRuntimeUpdatedAfterEdits()
     {
         var viewModel = NewBuilder();
         var requested = 0;
-        viewModel.PreviewRequested += _ => requested++;
+        viewModel.PreviewRequested += runtime =>
+        {
+            Assert.Same(viewModel.Runtime, runtime);
+            requested++;
+        };
         viewModel.TryNowCommand.Execute(null);
-        Assert.True(viewModel.IsPreviewActive);
         Assert.Equal(1, requested);
 
         var layer = viewModel.SelectedLayer!;
@@ -214,29 +308,101 @@ public sealed class VisualizerBuilderViewModelTests
         viewModel.Runtime.Render(scene, AudioAnalysisSnapshot.Silence, Frame());
         Assert.Equal(VoxelColor.Red, scene[2, 3, 4]);
         Assert.Equal(1, requested);
-        Assert.True(viewModel.IsPreviewActive);
     }
 
     [Fact]
-    public async Task StopPreviewRestoresThePreviouslySelectedBuiltInVisualizer()
+    public async Task PreviewStatusFollowsTheActiveStreamAcrossDisconnectAndReconnect()
     {
-        var main = new MainWindowViewModel(new MemorySettingsStore());
-        try
+        await using var main = CreatePreviewHost();
+        var reportedStates = new List<string>();
+        main.PropertyChanged += (_, args) =>
         {
-            var builtIn = main.SelectedVisualizer;
-            main.Builder.NewCommand.Execute(null);
-            main.Builder.TryNowCommand.Execute(null);
-            Assert.Same(main.Builder.Runtime, main.SelectedVisualizer);
+            if (args.PropertyName == nameof(MainWindowViewModel.BuilderPreviewStatus))
+                reportedStates.Add(main.BuilderPreviewStatus);
+        };
 
-            main.Builder.StopPreviewCommand.Execute(null);
+        Assert.Equal("Not Previewing", main.BuilderPreviewStatus);
+        main.Builder.NewCommand.Execute(null);
+        main.Builder.TryNowCommand.Execute(null);
+        Assert.True(main.IsBuilderPreviewSelected);
+        Assert.Equal("Preview Ready — Cube Disconnected", reportedStates[^1]);
 
-            Assert.Same(builtIn, main.SelectedVisualizer);
-            Assert.False(main.Builder.IsPreviewActive);
-        }
-        finally
+        await main.ToggleConnectionAsync();
+        Assert.Equal("Live on Cube", reportedStates[^1]);
+        main.SelectedStreamMode = main.StreamModes[1];
+        Assert.Equal("Live on Cube", main.BuilderPreviewStatus);
+
+        await main.ToggleConnectionAsync();
+        Assert.Equal("Preview Ready — Cube Disconnected", reportedStates[^1]);
+        await main.ToggleConnectionAsync();
+        Assert.Equal("Preview Paused — Hardware Test", reportedStates[^1]);
+        main.Builder.TryNowCommand.Execute(null);
+        Assert.Equal("Preview Paused — Hardware Test", main.BuilderPreviewStatus);
+        main.SelectedStreamMode = main.StreamModes[0];
+        Assert.Equal("Preview Paused — Hardware Test", main.BuilderPreviewStatus);
+
+        await main.ToggleConnectionAsync();
+        Assert.Equal("Preview Ready — Cube Disconnected", reportedStates[^1]);
+        await main.ToggleConnectionAsync();
+        Assert.Equal("Live on Cube", reportedStates[^1]);
+        main.SelectedVisualizer = main.Visualizers[0];
+        Assert.Equal("Not Previewing", reportedStates[^1]);
+        Assert.False(main.IsBuilderPreviewSelected);
+        main.SelectedVisualizer = main.Builder.Runtime;
+        Assert.Equal("Live on Cube", reportedStates[^1]);
+    }
+
+    [Fact]
+    public async Task PreviewStopsReportingLiveWhenTheStreamEndsWithThePortStillOpen()
+    {
+        var transport = new PreviewTransport();
+        await using var main = CreatePreviewHost(transport);
+        var streamInactive = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        main.PropertyChanged += (_, args) =>
         {
-            await main.DisposeAsync();
+            if (args.PropertyName == nameof(MainWindowViewModel.BuilderPreviewStatus) &&
+                main.BuilderPreviewStatus == "Preview Ready — Stream Inactive")
+                streamInactive.TrySetResult();
+        };
+        main.Builder.NewCommand.Execute(null);
+        main.Builder.TryNowCommand.Execute(null);
+        await main.ToggleConnectionAsync();
+        Assert.Equal("Live on Cube", main.BuilderPreviewStatus);
+
+        transport.FailWrites();
+        await streamInactive.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(main.IsConnected);
+        Assert.True(main.IsBuilderPreviewSelected);
+        Assert.Equal("Preview Ready — Stream Inactive", main.BuilderPreviewStatus);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task StopPreviewRestoresThePreviouslySelectedBuiltInVisualizer(int? streamModeIndex)
+    {
+        await using var main = CreatePreviewHost();
+        var builtIn = main.Visualizers[1];
+        main.SelectedVisualizer = builtIn;
+        if (streamModeIndex is int index)
+        {
+            main.SelectedStreamMode = main.StreamModes[index];
+            await main.ToggleConnectionAsync();
         }
+
+        Assert.Equal("Not Previewing", main.BuilderPreviewStatus);
+        main.Builder.NewCommand.Execute(null);
+        main.Builder.TryNowCommand.Execute(null);
+        Assert.Same(main.Builder.Runtime, main.SelectedVisualizer);
+        Assert.True(main.IsBuilderPreviewSelected);
+
+        main.Builder.StopPreviewCommand.Execute(null);
+
+        Assert.Same(builtIn, main.SelectedVisualizer);
+        Assert.False(main.IsBuilderPreviewSelected);
+        Assert.Equal("Not Previewing", main.BuilderPreviewStatus);
     }
 
     [Theory]
@@ -248,11 +414,13 @@ public sealed class VisualizerBuilderViewModelTests
     public void AddingEachEffectCreatesAValidVisibleLayer(string effect)
     {
         var viewModel = new VisualizerBuilderViewModel();
+        viewModel.RemoveLayerCommand.Execute(null);
         viewModel.EffectToAdd = effect;
         viewModel.AddLayerCommand.Execute(null);
 
         var definition = viewModel.GetDefinitionSnapshot();
         Assert.True(VisualizerDefinitionValidator.Validate(definition).IsValid);
+        Assert.Single(definition.Layers);
         Assert.Equal(effect, viewModel.SelectedLayer!.EffectChoice);
 
         var scene = new VoxelScene(8, 8, 8);
@@ -266,6 +434,16 @@ public sealed class VisualizerBuilderViewModelTests
         viewModel.NewCommand.Execute(null);
         return viewModel;
     }
+
+    private static JsonVisualizerDefinitionStore CreateStartupStore() =>
+        new(Path.Combine(Path.GetTempPath(), $"led-cube-builder-startup-{Guid.NewGuid():N}"));
+
+    private static MainWindowViewModel CreatePreviewHost(PreviewTransport? transport = null) =>
+        new(new MemorySettingsStore(), transport ?? new PreviewTransport(), new SilentAudioCaptureFactory())
+        {
+            SelectedSerialPort = new SerialPortDescriptor("test", "Test port"),
+            SelectedAudioSource = new AudioSourceInfo("silent", "Silent test source")
+        };
 
     private static VisualizationFrame Frame() =>
         new(TimeSpan.FromSeconds(.25), TimeSpan.FromMilliseconds(50), 1, DeviceCapabilities.Rgb);
@@ -283,5 +461,61 @@ public sealed class VisualizerBuilderViewModelTests
 
         public Task SaveAsync(ApplicationSettings settings, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class PreviewTransport : ISerialTransport
+    {
+        private volatile bool _failWrites;
+
+        public bool IsOpen => PortName is not null;
+        public string? PortName { get; private set; }
+
+        public Task OpenAsync(string portName, int baudRate, CancellationToken cancellationToken = default)
+        {
+            PortName = portName;
+            return Task.CompletedTask;
+        }
+
+        public Task WriteAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default) =>
+            _failWrites ? Task.FromException(new IOException("Simulated write failure.")) : Task.CompletedTask;
+
+        public void FailWrites() => _failWrites = true;
+
+        public Task CloseAsync()
+        {
+            PortName = null;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class SilentAudioCaptureFactory : IAudioCaptureFactory
+    {
+        public Task<IReadOnlyList<AudioSourceInfo>> GetSourcesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AudioSourceInfo>>([]);
+
+        public IAudioCapture Create(AudioSourceInfo source) => new SilentAudioCapture();
+    }
+
+    private sealed class SilentAudioCapture : IAudioCapture
+    {
+        public event EventHandler<AudioBuffer>? DataAvailable { add { } remove { } }
+        public event EventHandler<string>? StatusChanged { add { } remove { } }
+        public bool IsRunning { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            IsRunning = true;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync()
+        {
+            IsRunning = false;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => new(StopAsync());
     }
 }

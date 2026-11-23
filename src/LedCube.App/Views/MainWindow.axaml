@@ -179,12 +179,14 @@
             </StackPanel>
             <ComboBox Grid.Column="1" ItemsSource="{Binding Builder.Modes}"
                       SelectedItem="{Binding Builder.SelectedMode}" MinWidth="120" Margin="8,0" />
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="7">
-              <TextBlock Text="{Binding Builder.PreviewStateText}" Foreground="#59C7FF"
-                         FontWeight="Bold" VerticalAlignment="Center" Margin="4,0" />
-              <Button Content="Try It Now" Command="{Binding Builder.TryNowCommand}" />
-              <Button Content="Stop Preview" Command="{Binding Builder.StopPreviewCommand}"
-                      IsEnabled="{Binding Builder.IsPreviewActive}" />
+            <StackPanel Grid.Column="2" Spacing="5" HorizontalAlignment="Right">
+              <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Right">
+                <Button Content="Try It Now" Command="{Binding Builder.TryNowCommand}" />
+                <Button Content="Stop Preview" Command="{Binding Builder.StopPreviewCommand}"
+                        IsEnabled="{Binding IsBuilderPreviewSelected}" />
+              </StackPanel>
+              <TextBlock Text="{Binding BuilderPreviewStatus}" Foreground="#59C7FF"
+                         FontWeight="SemiBold" HorizontalAlignment="Right" />
             </StackPanel>
           </Grid>
 
@@ -277,7 +279,7 @@
                 <Grid ColumnDefinitions="115,*,105" IsVisible="{Binding Builder.SelectedLayer.ShowReactionStrength}">
                   <TextBlock Text="Reaction Strength" VerticalAlignment="Center" />
                   <Slider Grid.Column="1" Minimum="25" Maximum="300" Value="{Binding Builder.SelectedLayer.ReactionStrengthPercent}"
-                          ToolTip.Tip="Amplifies normalized music or beat response once, without changing layer intensity." />
+                          ToolTip.Tip="{Binding Builder.SelectedLayer.ReactionStrengthHelp}" />
                   <TextBlock Grid.Column="2" Text="{Binding Builder.SelectedLayer.ReactionStrengthDisplay}"
                              VerticalAlignment="Center" TextAlignment="Right" Margin="7,0,0,0" />
                 </Grid>
